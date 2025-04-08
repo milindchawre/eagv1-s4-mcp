@@ -1,0 +1,8 @@
+python-dotenv
+google-genai
+mcp
+appscript
+pillow
+pyautogui
+asyncio
+python3-xlib
