@@ -1,6 +1,6 @@
-# Math Agent with Microsoft Word Integration
+# Math Agent with Microsoft Word and Gmail Integration
 
-A Python-based mathematical agent that solves problems iteratively using various mathematical tools and visualizes results using Microsoft Word.
+A Python-based mathematical agent that solves problems iteratively using various mathematical tools and visualizes results using Microsoft Word and Gmail.
 
 ## Features
 
