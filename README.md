@@ -19,6 +19,18 @@ A Python-based mathematical agent that solves problems iteratively using various
   - Iterative problem-solving approach
   - Automatic tool selection and execution
 
+- Enhanced Logging
+  - Detailed execution logs
+  - Debug information for tool operations
+  - Error tracking and reporting
+  - Comprehensive email reports with execution history
+
+- Email Integration
+  - Automatic email reports after completion
+  - Detailed execution logs in email body
+  - Final result summary
+  - Gmail SMTP integration
+
 - Word Integration
   - Automatic Word document creation
   - Rectangle drawing with results
@@ -39,28 +51,44 @@ A Python-based mathematical agent that solves problems iteratively using various
 ```bash
 pip3 install -r requirements.txt
 ```
-3. Create a .env file in the project root and add your Gemini API key:
+3. Set up environment variables:
+
+Option 1: Export in terminal (recommended for testing):
+```bash
+export GEMINI_API_KEY=your_api_key_here
+export GMAIL_USER=your.email@gmail.com
+export GMAIL_APP_PASSWORD=your16digitpassword
+```
+Option 2: Create a .env file:
 ```bash
 GEMINI_API_KEY=your_api_key_here
+GMAIL_USER=your.email@gmail.com
+GMAIL_APP_PASSWORD=your16digitpassword
 ```
 
 ## Usage
+Recommended Method: Run the client (automatically starts the server):
+```bash
+python math_agent_client.py
+```
+Alternative Method (for debugging): Run server and client separately:
 1. Start the MCP server:
 ```bash
+# Terminal 1
 python math_agent_server.py
-```
-2. Run the client:
-```bash
+
+# Terminal 2
 python math_agent_client.py
 ```
 
 The agent will:
 
-- Connect to the MCP server
+- Start the MCP server internally
 - Process mathematical queries using Gemini AI
 - Execute calculations using available tools
 - Create a Word document with the result
 - Draw a rectangle containing the final answer
+- Send an email report with execution logs
 
 ## Example Queries
 ```plaintext
@@ -87,8 +115,32 @@ The agent will:
 - Automatic state reset
 - Debug logging
 
+## Logging
+- All operations are logged with timestamps
+- Log levels: INFO, DEBUG, ERROR
+- Logs are included in email reports
+- Console output for real-time monitoring
+
+## Troubleshooting
+
+### Email Configuration
+- Ensure GMAIL_USER is your full email address
+- GMAIL_APP_PASSWORD must be a 16-character app password
+- Enable 2-Step Verification in your Google Account
+- Check execution logs for detailed error messages
+
+### Word Integration
+- Ensure Microsoft Word is installed and running
+- Allow automation permissions if prompted
+- Check execution logs for any automation errors
+
+### Common Issues
+- If environment variables are not detected, try restarting your terminal
+- For Word automation issues, ensure Word is not in full-screen mode
+- Check console output for detailed error messages and stack traces
+
 ## Limitations
 - Requires macOS environment
 - Microsoft Word for macOS must be installed
-- Maximum 3 iterations per problem
+- Maximum 8 iterations per problem
 - Requires Google Cloud API access

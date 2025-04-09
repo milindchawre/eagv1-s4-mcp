@@ -7,6 +7,7 @@ from google import genai
 from concurrent.futures import TimeoutError
 from functools import partial
 from appscript import app, k
+import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -15,20 +16,20 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
 
-max_iterations = 3
+max_iterations = 8
 last_response = None
 iteration = 0
 iteration_response = []
+execution_logs = []
 
+# Update generate_with_timeout function
 async def generate_with_timeout(client, prompt, timeout=10):
     """Generate content with a timeout"""
-    print("Starting LLM generation...")
+    logger.info("Starting LLM generation...")
     try:
-        # Convert the synchronous generate_content call to run in a thread
         loop = asyncio.get_event_loop()
         response = await asyncio.wait_for(
-            loop.run_in_executor(
-                None, 
+            loop.run_in_executor(None, 
                 lambda: client.models.generate_content(
                     model="gemini-2.0-flash",
                     contents=prompt
@@ -36,55 +37,95 @@ async def generate_with_timeout(client, prompt, timeout=10):
             ),
             timeout=timeout
         )
-        print("LLM generation completed")
+        logger.info("LLM generation completed")
         return response
     except TimeoutError:
-        print("LLM generation timed out!")
+        logger.error("LLM generation timed out!")
         raise
     except Exception as e:
-        print(f"Error in LLM generation: {e}")
+        logger.error(f"Error in LLM generation: {e}")
         raise
 
+# Near the top with other imports
+import sys
+from typing import Any
+
+# Replace the simple log_execution function with an enhanced logging system
+class Logger:
+    def __init__(self):
+        self.logs = []
+        self._original_stdout = sys.stdout
+        
+    def log(self, message: str, level: str = "INFO"):
+        """Add message to execution logs and print it"""
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_entry = f"[{timestamp}] {level}: {message}"
+        self.logs.append(log_entry)
+        print(log_entry)
+    
+    def debug(self, message: str):
+        self.log(message, "DEBUG")
+    
+    def info(self, message: str):
+        self.log(message, "INFO")
+    
+    def error(self, message: str):
+        self.log(message, "ERROR")
+    
+    def get_logs(self) -> list[str]:
+        return self.logs
+
+# Create global logger instance
+logger = Logger()
+
+# Modify reset_state function
 def reset_state():
     """Reset all global variables to their initial state"""
-    global last_response, iteration, iteration_response
+    global last_response, iteration, iteration_response, logger
     last_response = None
     iteration = 0
     iteration_response = []
+    logger = Logger()  # Reset logger
 
+# Replace print statements with logger calls throughout the code, for example:
 async def main():
-    reset_state()  # Reset at the start of main
-    print("Starting main execution...")
+    reset_state()
+    logger.info("Starting main execution...")
     try:
-        # Create a single MCP server connection
-        print("Establishing connection to MCP server...")
+        logger.info("Establishing connection to MCP server...")
+        # Near the top of the file, after imports
+        # Get environment variables
+        env_vars = {
+            "GMAIL_USER": os.getenv("GMAIL_USER"),
+            "GMAIL_APP_PASSWORD": os.getenv("GMAIL_APP_PASSWORD"),
+            "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY")
+        }
+        
+        # Modify the server parameters to include environment
         server_params = StdioServerParameters(
-            command="python3",  # Using python3 for macOS
-            args=["math_agent_server.py"]
+            command="python3",
+            args=["math_agent_server.py"],
+            env=env_vars  # Pass environment variables to the server process
         )
-
+        
         async with stdio_client(server_params) as (read, write):
-            print("Connection established, creating session...")
+            logger.info("Connection established, creating session...")
             async with ClientSession(read, write) as session:
-                print("Session created, initializing...")
+                logger.info("Session created, initializing...")
                 await session.initialize()
                 
+                # Replace remaining print statements in the tools section
                 # Get available tools
-                print("Requesting tool list...")
+                logger.info("Requesting tool list...")
                 tools_result = await session.list_tools()
                 tools = tools_result.tools
-                print(f"Successfully retrieved {len(tools)} tools")
-
+                logger.info(f"Successfully retrieved {len(tools)} tools")
+                
                 # Create system prompt with available tools
-                print("Creating system prompt...")
-                print(f"Number of tools: {len(tools)}")
+                logger.info("Creating system prompt...")
+                logger.info(f"Number of tools: {len(tools)}")
                 
                 try:
-                    # First, let's inspect what a tool object looks like
-                    # if tools:
-                    #     print(f"First tool properties: {dir(tools[0])}")
-                    #     print(f"First tool example: {tools[0]}")
-                    
                     tools_description = []
                     for i, tool in enumerate(tools):
                         try:
@@ -105,18 +146,18 @@ async def main():
 
                             tool_desc = f"{i+1}. {name}({params_str}) - {desc}"
                             tools_description.append(tool_desc)
-                            print(f"Added description for tool: {tool_desc}")
+                            logger.debug(f"Added description for tool: {tool_desc}")
                         except Exception as e:
-                            print(f"Error processing tool {i}: {e}")
+                            logger.error(f"Error processing tool {i}: {e}")
                             tools_description.append(f"{i+1}. Error processing tool")
                     
                     tools_description = "\n".join(tools_description)
-                    print("Successfully created tools description")
+                    logger.info("Successfully created tools description")
                 except Exception as e:
-                    print(f"Error creating tools description: {e}")
+                    logger.error(f"Error creating tools description: {e}")
                     tools_description = "Error loading tools"
                 
-                print("Created system prompt...")
+                logger.info("Created system prompt...")
                 
                 system_prompt = f"""You are a math agent solving problems in iterations. You have access to various mathematical tools.
 
@@ -134,7 +175,9 @@ Important:
 - When a function returns multiple values, you need to process all of them
 - Only give FINAL_ANSWER when you have completed all necessary calculations
 - Do not repeat function calls with the same parameters
-- When you provide FINAL_ANSWER, it will automatically create a rectangle in Word document with the text "Final Answer: <your_result>"
+- When you provide FINAL_ANSWER, these actions will be performed:
+  1. Create a rectangle in Word document with the text "Final Answer: <your_result>"
+  2. Send an email report with execution logs and final result
 
 Examples:
 - FUNCTION_CALL: add|5|3
@@ -151,7 +194,7 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                 global iteration, last_response
                 
                 while iteration < max_iterations:
-                    print(f"\n--- Iteration {iteration + 1} ---")
+                    logger.info(f"\n--- Iteration {iteration + 1} ---")
                     if last_response is None:
                         current_query = query
                     else:
@@ -159,12 +202,12 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                         current_query = current_query + "  What should I do next?"
 
                     # Get model's response with timeout
-                    print("Preparing to generate LLM response...")
+                    logger.info("Preparing to generate LLM response...")
                     prompt = f"{system_prompt}\n\nQuery: {current_query}"
                     try:
                         response = await generate_with_timeout(client, prompt)
                         response_text = response.text.strip()
-                        print(f"LLM Response: {response_text}")
+                        logger.info(f"LLM Response: {response_text}")
                         
                         # Find the FUNCTION_CALL line in the response
                         for line in response_text.split('\n'):
@@ -183,20 +226,19 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                         parts = [p.strip() for p in function_info.split("|")]
                         func_name, params = parts[0], parts[1:]
                         
-                        print(f"\nDEBUG: Raw function info: {function_info}")
-                        print(f"DEBUG: Split parts: {parts}")
-                        print(f"DEBUG: Function name: {func_name}")
-                        print(f"DEBUG: Raw parameters: {params}")
+                        logger.debug(f"Raw function info: {function_info}")
+                        logger.debug(f"Function name: {func_name}")
+                        logger.debug(f"Raw parameters: {params}")
                         
                         try:
                             # Find the matching tool to get its input schema
                             tool = next((t for t in tools if t.name == func_name), None)
                             if not tool:
-                                print(f"DEBUG: Available tools: {[t.name for t in tools]}")
+                                logger.debug(f"Available tools: {[t.name for t in tools]}")
                                 raise ValueError(f"Unknown tool: {func_name}")
 
-                            print(f"DEBUG: Found tool: {tool.name}")
-                            print(f"DEBUG: Tool schema: {tool.inputSchema}")
+                            logger.debug(f"Found tool: {tool.name}")
+                            logger.debug(f"Tool schema: {tool.inputSchema}")
 
                             # Prepare arguments according to the tool's input schema
                             arguments = {}
@@ -261,38 +303,42 @@ Your entire response should be a single line starting with either FUNCTION_CALL:
                             last_response = iteration_result
 
                         except Exception as e:
-                            print(f"DEBUG: Error details: {str(e)}")
-                            print(f"DEBUG: Error type: {type(e)}")
+                            logger.error(f"Error details: {str(e)}")
+                            logger.error(f"Error type: {type(e)}")
                             import traceback
-                            traceback.print_exc()
+                            logger.error(traceback.format_exc())
                             iteration_response.append(f"Error in iteration {iteration + 1}: {str(e)}")
                             break
 
                     elif response_text.startswith("FINAL_ANSWER:"):
-                        print("\n=== Agent Execution Complete ===")
-                        try:
-                            # Extract the numeric result from FINAL_ANSWER
-                            final_result = response_text.split(":")[1].strip()
-                            
-                            # Open Word and create new document
-                            result = await session.call_tool("open_word")
-                            print(result.content[0].text)
-
-                            await asyncio.sleep(2)  # Wait for Word to initialize
-
-                            # Create formatted text for the rectangle
-                            formatted_text = f"Final Answer: {final_result}"
-                            
-                            # Add result to Word document
-                            result = await session.call_tool(
-                                "draw_word_rectangle_with_text",
-                                arguments={
-                                    "text": formatted_text
-                                }
-                            )
-                            print(result.content[0].text)
-                        except Exception as e:
-                            print(f"Error in Word integration: {e}")
+                        final_result = response_text.split("[")[1].split("]")[0]
+                        
+                        # Add final execution log
+                        logger.info("=== Agent Execution Complete ===")
+                        
+                        # Create Word document and draw rectangle with result
+                        word_result = await session.call_tool("open_word")
+                        logger.info(f"Word document creation: {word_result}")
+                        
+                        rectangle_result = await session.call_tool(
+                            "draw_word_rectangle_with_text",
+                            arguments={"text": f"Final Answer: {final_result}"}
+                        )
+                        logger.info(f"Rectangle creation: {rectangle_result}")
+                        
+                        # Send email report with complete logs
+                        recipient_email = os.getenv("GMAIL_USER")
+                        email_result = await session.call_tool(
+                            "send_email_report",
+                            arguments={
+                                "recipient": recipient_email,
+                                "logs": logger.get_logs(),  # Use collected logs
+                                "final_result": final_result
+                            }
+                        )
+                        logger.info(f"Email report: {email_result}")
+                        
+                        print(f"Final result: {final_result}")
                         break
 
                     iteration += 1

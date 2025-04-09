@@ -2,7 +2,7 @@
 from mcp.server.fastmcp import FastMCP, Image
 from mcp.server.fastmcp.prompts import base
 from mcp.types import TextContent
-from mcp import types
+from mcp import Tool, types
 from PIL import Image as PILImage
 import math
 import sys
@@ -11,6 +11,19 @@ import pyautogui
 import time
 import subprocess  # Add this import
 import asyncio  # Add this import at the top
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
+from dotenv import load_dotenv
+import logging
+
+# After imports, before tools
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Load environment variables
+load_dotenv()
 
 # instantiate an MCP server client
 mcp = FastMCP("Calculator")
@@ -293,6 +306,88 @@ async def draw_word_rectangle_with_text(text: str) -> dict:
                 TextContent(
                     type="text",
                     text=f"Error adding text to document: {str(e)}"
+                )
+            ]
+        }
+
+@mcp.tool()
+async def send_email_report(recipient: str, logs: list, final_result: str) -> dict:
+    """Sends an email report with execution logs and final result"""
+    try:
+        # Email configuration with direct environment access
+        sender_email = os.environ.get("GMAIL_USER")
+        sender_password = os.environ.get("GMAIL_APP_PASSWORD")
+        
+        if not sender_email or not sender_password:
+            logger.error("Email credentials not found in environment")
+            return {
+                "content": [
+                    TextContent(
+                        type="text",
+                        text="Email credentials not found. Please ensure environment variables are set:\n"
+                             "export GMAIL_USER=your.email@gmail.com\n"
+                             "export GMAIL_APP_PASSWORD=your16digitpassword"
+                    )
+                ]
+            }
+
+        # Create message
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = recipient
+        msg['Subject'] = "Math Agent Execution Report"
+        
+        body = f"""
+Math Agent Execution Report
+
+Final Result: {final_result}
+
+Execution Logs:
+{chr(10).join(log for log in logs)}
+        """
+        
+        msg.attach(MIMEText(body, 'plain'))
+        
+        # Create SMTP session with debug level
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.set_debuglevel(1)  # Enable debug output
+        
+        try:
+            server.ehlo()  # Identify ourselves to SMTP Gmail
+            server.starttls()  # Secure the connection
+            server.ehlo()  # Re-identify ourselves over TLS connection
+            server.login(sender_email, sender_password)  # Login to the server
+            server.send_message(msg)  # Send email
+            
+            return {
+                "content": [
+                    TextContent(
+                        type="text",
+                        text="Email report sent successfully"
+                    )
+                ]
+            }
+        finally:
+            server.quit()  # Always close the connection
+            
+    except smtplib.SMTPAuthenticationError as e:
+        return {
+            "content": [
+                TextContent(
+                    type="text",
+                    text=f"Gmail authentication failed. Error: {str(e)}. Please ensure:\n"
+                         "1. GMAIL_USER is your full email address\n"
+                         "2. GMAIL_APP_PASSWORD is the 16-character app password\n"
+                         "3. 2-Step Verification is enabled in your Google Account"
+                )
+            ]
+        }
+    except Exception as e:
+        return {
+            "content": [
+                TextContent(
+                    type="text",
+                    text=f"Failed to send email. Error: {str(e)}"
                 )
             ]
         }
